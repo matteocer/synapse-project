@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Synapse Spike Wall</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <main class="layout">
+    <section class="panel info">
+      <div class="title">
+        <p class="eyebrow">Live Playground</p>
+        <h1>Synapse Spike Wall</h1>
+        <p class="lede">Scan the QR to claim one receptor (AMPA or NMDA). Tune Ca++ permeability, probability of release, number of synapses, and quantal response, then fire spikes.</p>
+      </div>
+      <div class="qr-card">
+        <canvas id="qr-canvas" width="260" height="260" aria-label="QR code to join"></canvas>
+        <div class="join-link" id="join-link"></div>
+        <div class="session-line">Session <span id="session-id"></span></div>
+      </div>
+      <div class="legend grid">
+        <div><span class="dot assigned"></span> claimed</div>
+        <div><span class="dot free"></span> open</div>
+        <div><span class="dot ampa"></span> AMPA</div>
+        <div><span class="dot nmda"></span> NMDA</div>
+        <div><span class="dot spike"></span> recent spike</div>
+      </div>
+      <button id="reset-button" class="full" type="button">Reset session</button>
+    </section>
+
+    <section class="panel synapse-panel">
+      <header class="status-bar">
+        <div id="connected-count"></div>
+        <div id="synapse-count"></div>
+      </header>
+      <div id="synapse-grid" class="synapse-grid" aria-label="Synapse grid"></div>
+    </section>
+  </main>
+
+  <script type="module" src="/js/display.js"></script>
+</body>
+</html>

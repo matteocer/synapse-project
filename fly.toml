@@ -1,0 +1,22 @@
+# fly.toml generated for synapse-project
+app = "synapse-spike-wall"
+primary_region = "iad"
+
+[env]
+HOST = "0.0.0.0"
+SYNAPSES = "10"
+
+[[services]]
+  internal_port = 3000
+  protocol = "tcp"
+  processes = ["app"]
+
+  [[services.ports]]
+    port = 80
+
+  [[services.ports]]
+    port = 443
+
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "2s"

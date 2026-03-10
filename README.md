@@ -21,5 +21,11 @@ Then open `http://localhost:3000` on a display. Others can scan the QR code show
 - Set `SYNAPSES` to change the number of available synapses (default 10).
 - Sliders (controller): Ca++ permeability (0–2), probability of release (0–1), number of synapses (1–10), quantal response (0.1–5).
 
+## Deploy to Vercel
+- `vercel` CLI or dashboard will detect `vercel.json`.
+- No build step needed; static assets are served from `public/`, API lives in `api/index.js`.
+- Important: Server-Sent Events run inside a serverless function with a 60s cap (`maxDuration: 60`), so the EventSource may reconnect roughly once per minute. Real-time spikes still work, but connections will recycle.
+- Env vars to set in Vercel: `HOST=0.0.0.0`, `SYNAPSES=10` (optional). `PORT` is provided by Vercel automatically.
+
 ## Notes
 - Network access is not required for runtime—everything is bundled— but a modern browser with canvas and EventSource support is needed.

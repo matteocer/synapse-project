@@ -1,0 +1,16 @@
+{
+  "name": "synapse-project",
+  "version": "1.0.0",
+  "description": "Realtime synapse spiking visualizer with QR-code based controller pairing.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "NODE_ENV=development node server.js",
+    "test": "echo \"No automated tests yet\" && exit 0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "private": true
+}
