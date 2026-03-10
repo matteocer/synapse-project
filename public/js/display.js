@@ -1,5 +1,3 @@
-import { drawQR } from './qr.js';
-
 const defaultParams = () => ({
   caPermeability: 0.5,
   pRelease: 0.5,
@@ -316,12 +314,8 @@ function wireEvents() {
     applyStateSynapses(data.synapses || []);
     document.getElementById('session-id').textContent = state.sessionId;
     document.getElementById('join-link').textContent = state.joinUrl;
-    try {
-      drawQR(document.getElementById('qr-canvas'), state.joinUrl, { scale: 6, margin: 4 });
-    } catch (err) {
-      console.error('QR render failed', err);
-      document.getElementById('join-link').textContent = `${state.joinUrl} (QR unavailable)`;
-    }
+    const img = document.getElementById('qr-img');
+    img.src = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(state.joinUrl)}`;
   });
 
   es.onerror = () => {
@@ -345,12 +339,8 @@ async function init() {
 
   document.getElementById('join-link').textContent = info.joinUrl;
   document.getElementById('session-id').textContent = info.sessionId;
-  try {
-    drawQR(document.getElementById('qr-canvas'), info.joinUrl, { scale: 6, margin: 4 });
-  } catch (err) {
-    console.error('QR render failed', err);
-    document.getElementById('join-link').textContent = `${info.joinUrl} (QR unavailable)`;
-  }
+  document.getElementById('qr-img').src =
+    `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(info.joinUrl)}`;
 
   document.getElementById('reset-button').addEventListener('click', resetSession);
 
