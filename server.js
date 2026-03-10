@@ -76,7 +76,7 @@ function guessContentType(filePath) {
 }
 
 function buildJoinUrl(req) {
-  const proto = req.headers['x-forwarded-proto'] || 'http';
+  const proto = req.headers['x-forwarded-proto'] || 'https';
   const host = req.headers.host || `localhost:${PORT}`;
   return `${proto}://${host}/join/${sessionId}`;
 }
