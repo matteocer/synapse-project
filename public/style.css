@@ -144,6 +144,11 @@ button {
 button:hover { transform: translateY(-1px); box-shadow: 0 12px 20px rgba(0, 0, 0, 0.25); }
 button:active { transform: translateY(0); filter: brightness(0.95); }
 button:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+.ghost {
+  background: rgba(255,255,255,0.1);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
 .full { width: 100%; margin-top: 14px; }
 
 .synapse-grid {

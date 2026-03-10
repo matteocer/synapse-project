@@ -5,6 +5,7 @@ const sessionLabel = document.getElementById('session-label');
 const receptorLabel = document.getElementById('receptor-label');
 const latencyLabel = document.getElementById('latency-label');
 const fireBtn = document.getElementById('fire-btn');
+const autoBtn = document.getElementById('auto-btn');
 const caSlider = document.getElementById('ca-slider');
 const prelSlider = document.getElementById('prel-slider');
 const nsynSlider = document.getElementById('nsyn-slider');
@@ -20,6 +21,8 @@ let synapseId = null;
 let lastPing = null;
 let receptor = null;
 let sendTimer = null;
+let autoOn = false;
+let autoTimer = null;
 
 const params = {
   caPermeability: 0.5,
@@ -96,6 +99,7 @@ async function joinSession() {
   quantalSlider.value = params.quantalResponse;
   statusEl.textContent = 'Connected. Tap to fire spikes.';
   fireBtn.disabled = false;
+  autoBtn.disabled = false;
 }
 
 async function fireSpike() {
@@ -112,11 +116,13 @@ async function fireSpike() {
   } else if (res.status === 410) {
     statusEl.textContent = 'Session expired. Please re-scan the QR code.';
     fireBtn.disabled = true;
+    stopAuto();
   }
 }
 
 async function leave() {
   if (!clientId) return;
+  stopAuto();
   try {
     await fetch('/api/leave', {
       method: 'POST',
@@ -131,6 +137,38 @@ async function leave() {
 
 fireBtn.addEventListener('click', fireSpike);
 window.addEventListener('beforeunload', leave);
+
+function stopAuto() {
+  autoOn = false;
+  if (autoTimer) {
+    clearTimeout(autoTimer);
+    autoTimer = null;
+  }
+  autoBtn.textContent = 'Auto spike: off';
+}
+
+async function autoLoop() {
+  if (!autoOn) return;
+  try {
+    await fireSpike();
+  } catch (err) {
+    console.error('auto spike failed', err);
+    stopAuto();
+    return;
+  }
+  autoTimer = setTimeout(autoLoop, 2000);
+}
+
+autoBtn.addEventListener('click', () => {
+  if (!clientId) return;
+  if (autoOn) {
+    stopAuto();
+  } else {
+    autoOn = true;
+    autoBtn.textContent = 'Auto spike: on (2s)';
+    autoLoop();
+  }
+});
 
 caSlider.addEventListener('input', () => {
   params.caPermeability = Number(caSlider.value);
