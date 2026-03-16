@@ -1,5 +1,3 @@
-import { drawQR } from './qr.js';
-
 const defaultParams = () => ({
   caPermeability: 0.5,
   pRelease: 0.5,
@@ -10,6 +8,7 @@ const defaultParams = () => ({
 const state = {
   sessionId: null,
   joinUrl: '',
+  qrDataUrl: '',
   synapseCount: 0,
   synapses: [],
   eventSource: null,
@@ -18,7 +17,7 @@ const state = {
 
 const graphCanvas = document.getElementById('spike-graph');
 const graphCtx = graphCanvas.getContext('2d');
-const qrCanvas = document.getElementById('qr-img');
+const qrImg = document.getElementById('qr-img');
 const palette = [
   '#5cf4d9', '#f7b538', '#8f8bff', '#ff6f61', '#6dd3ff', '#c1ff5c',
   '#ff9de2', '#7cf37c', '#ffd166', '#5ca9ff', '#f9ed69', '#9cf6f6',
@@ -32,25 +31,9 @@ function resizeGraph() {
   graphCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
 }
 
-function buildJoinUrl(sessionId) {
-  return `${window.location.origin}/join/${sessionId}`;
-}
-
-function renderQrCode(joinUrl) {
-  try {
-    drawQR(qrCanvas, joinUrl, { margin: 2, scale: 7 });
-  } catch (err) {
-    const ctx = qrCanvas.getContext('2d');
-    qrCanvas.width = 260;
-    qrCanvas.height = 260;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, qrCanvas.width, qrCanvas.height);
-    ctx.fillStyle = '#0b0b0f';
-    ctx.font = '16px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('QR unavailable', qrCanvas.width / 2, qrCanvas.height / 2);
-    console.error('QR render failed', err);
-  }
+function renderQrCode(qrDataUrl, joinUrl) {
+  qrImg.src = qrDataUrl || '';
+  qrImg.alt = joinUrl ? `QR code to join ${joinUrl}` : 'QR code to join';
 }
 
 function drawRoundedRect(ctx, x, y, w, h, r) {
@@ -429,12 +412,14 @@ function wireEvents() {
   es.addEventListener('reset', (evt) => {
     const data = JSON.parse(evt.data);
     state.sessionId = data.sessionId;
-    state.joinUrl = buildJoinUrl(state.sessionId);
+    state.joinUrl = data.joinUrl || state.joinUrl;
+    state.qrDataUrl = data.qrDataUrl || '';
+    state.synapseCount = data.synapseCount || state.synapseCount;
     ensureSynapses(state.synapseCount);
     applyStateSynapses(data.synapses || []);
     document.getElementById('session-id').textContent = state.sessionId;
     document.getElementById('join-link').textContent = state.joinUrl;
-    renderQrCode(state.joinUrl);
+    renderQrCode(state.qrDataUrl, state.joinUrl);
   });
 
   es.onerror = () => {
@@ -453,14 +438,15 @@ async function init() {
   window.addEventListener('resize', resizeGraph);
   const info = await fetch('/api/session').then((r) => r.json());
   state.sessionId = info.sessionId;
-  state.joinUrl = buildJoinUrl(info.sessionId);
+  state.joinUrl = info.joinUrl;
+  state.qrDataUrl = info.qrDataUrl || '';
   state.synapseCount = info.synapseCount;
   ensureSynapses(info.synapseCount);
   applyStateSynapses(info.state.synapses || []);
 
   document.getElementById('join-link').textContent = state.joinUrl;
   document.getElementById('session-id').textContent = info.sessionId;
-  renderQrCode(state.joinUrl);
+  renderQrCode(state.qrDataUrl, state.joinUrl);
 
   document.getElementById('reset-button').addEventListener('click', resetSession);
 

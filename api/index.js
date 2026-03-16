@@ -2,8 +2,14 @@
 // Supports SSE for the display and REST-ish POST endpoints for controllers.
 
 const { randomUUID, randomBytes } = require('crypto');
+const QRCode = require('qrcode');
 
 const SYNAPSE_COUNT = Number(process.env.SYNAPSES || 10);
+const QR_OPTIONS = {
+  errorCorrectionLevel: 'M',
+  margin: 4,
+  width: 260,
+};
 
 let sessionId = randomBytes(4).toString('hex');
 
@@ -39,7 +45,7 @@ function buildJoinUrl(req) {
     ? forwardedProto.split(',')[0].trim()
     : (req.socket?.encrypted ? 'https' : 'http');
   const host = req.headers.host || 'localhost';
-  return `${proto}://${host}/join/${sessionId}`;
+  return `${proto}://${host}/j/${sessionId}`;
 }
 
 function currentState() {
@@ -55,6 +61,18 @@ function currentState() {
         params: assigned?.params || defaultParams(),
       };
     }),
+  };
+}
+
+async function buildSessionPayload(req) {
+  const joinUrl = buildJoinUrl(req);
+  const qrDataUrl = await QRCode.toDataURL(joinUrl, QR_OPTIONS);
+  return {
+    sessionId,
+    joinUrl,
+    qrDataUrl,
+    synapseCount: SYNAPSE_COUNT,
+    state: currentState(),
   };
 }
 
@@ -251,12 +269,7 @@ module.exports = async function handler(req, res) {
   const route = pathname.replace('/api', '');
 
   if (req.method === 'GET' && route === '/session') {
-    sendJson(res, 200, {
-      sessionId,
-      joinUrl: buildJoinUrl(req),
-      synapseCount: SYNAPSE_COUNT,
-      state: currentState(),
-    });
+    sendJson(res, 200, await buildSessionPayload(req));
     return;
   }
   if (req.method === 'GET' && route === '/events') {
@@ -281,8 +294,9 @@ module.exports = async function handler(req, res) {
   }
   if (req.method === 'POST' && route === '/reset') {
     resetSession();
-    sendJson(res, 200, { sessionId, synapseCount: SYNAPSE_COUNT });
-    broadcast('reset', currentState());
+    const payload = await buildSessionPayload(req);
+    sendJson(res, 200, payload);
+    broadcast('reset', payload);
     return;
   }
 
