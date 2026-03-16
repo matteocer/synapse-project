@@ -15,7 +15,7 @@
         <p class="lede">Scan the QR to claim one receptor (AMPA or NMDA). Tune Ca++ permeability, probability of release, number of synapses, and quantal response, then fire spikes.</p>
       </div>
       <div class="qr-card">
-        <img id="qr-img" width="260" height="260" alt="QR code to join" />
+        <canvas id="qr-img" width="260" height="260" aria-label="QR code to join"></canvas>
         <div class="join-link" id="join-link"></div>
         <div class="session-line">Session <span id="session-id"></span></div>
       </div>
@@ -35,6 +35,16 @@
         <div id="synapse-count"></div>
       </header>
       <div id="synapse-grid" class="synapse-grid" aria-label="Synapse grid"></div>
+    </section>
+
+    <section class="panel graph-panel">
+      <div class="graph-header">
+        <div>
+          <p class="eyebrow">Recent Spikes (10s window)</p>
+          <p class="lede">Waveform shaped by receptor (AMPA fast / NMDA slow), Ca++ permeability, probability of release, n synapses, and quantal response.</p>
+        </div>
+      </div>
+      <canvas id="spike-graph" aria-label="Spike waveforms"></canvas>
     </section>
   </main>
 

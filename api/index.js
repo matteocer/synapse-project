@@ -34,7 +34,10 @@ function notFound(res) {
 }
 
 function buildJoinUrl(req) {
-  const proto = req.headers['x-forwarded-proto'] || 'https';
+  const forwardedProto = req.headers['x-forwarded-proto'];
+  const proto = typeof forwardedProto === 'string'
+    ? forwardedProto.split(',')[0].trim()
+    : (req.socket?.encrypted ? 'https' : 'http');
   const host = req.headers.host || 'localhost';
   return `${proto}://${host}/join/${sessionId}`;
 }

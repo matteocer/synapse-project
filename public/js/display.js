@@ -1,3 +1,5 @@
+import { drawQR } from './qr.js';
+
 const defaultParams = () => ({
   caPermeability: 0.5,
   pRelease: 0.5,
@@ -11,7 +13,45 @@ const state = {
   synapseCount: 0,
   synapses: [],
   eventSource: null,
+  spikes: [],
 };
+
+const graphCanvas = document.getElementById('spike-graph');
+const graphCtx = graphCanvas.getContext('2d');
+const qrCanvas = document.getElementById('qr-img');
+const palette = [
+  '#5cf4d9', '#f7b538', '#8f8bff', '#ff6f61', '#6dd3ff', '#c1ff5c',
+  '#ff9de2', '#7cf37c', '#ffd166', '#5ca9ff', '#f9ed69', '#9cf6f6',
+];
+
+function resizeGraph() {
+  const ratio = window.devicePixelRatio || 1;
+  const rect = graphCanvas.getBoundingClientRect();
+  graphCanvas.width = rect.width * ratio;
+  graphCanvas.height = rect.height * ratio;
+  graphCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+}
+
+function buildJoinUrl(sessionId) {
+  return `${window.location.origin}/join/${sessionId}`;
+}
+
+function renderQrCode(joinUrl) {
+  try {
+    drawQR(qrCanvas, joinUrl, { margin: 2, scale: 7 });
+  } catch (err) {
+    const ctx = qrCanvas.getContext('2d');
+    qrCanvas.width = 260;
+    qrCanvas.height = 260;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, qrCanvas.width, qrCanvas.height);
+    ctx.fillStyle = '#0b0b0f';
+    ctx.font = '16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('QR unavailable', qrCanvas.width / 2, qrCanvas.height / 2);
+    console.error('QR render failed', err);
+  }
+}
 
 function drawRoundedRect(ctx, x, y, w, h, r) {
   const radius = Math.min(r, w / 2, h / 2);
@@ -218,6 +258,84 @@ function updateCounts() {
   document.getElementById('synapse-count').textContent = `Synapses: ${state.synapseCount}`;
 }
 
+function recordSpike(spike) {
+  const now = performance.now();
+  const syn = state.synapses[spike.synapseId];
+  const params = syn?.params || defaultParams();
+  const receptor = syn?.receptor || 'AMPA';
+  state.spikes.push({
+    t: now,
+    synapseId: spike.synapseId,
+    receptor,
+    power: spike.power || 1,
+    params: { ...params },
+  });
+  const cutoff = now - 10000; // keep last 10s
+  state.spikes = state.spikes.filter((s) => s.t >= cutoff);
+}
+
+function spikeValue(spike, t) {
+  if (t <= 0) return 0;
+  const { params, receptor, power } = spike;
+  const baseAmp = power * params.quantalResponse * (0.5 + 0.5 * params.pRelease) * (1 + 0.2 * (params.nSynapses - 1));
+  const tauR = receptor === 'NMDA' ? 15 : 3;
+  const tauD = receptor === 'NMDA'
+    ? 200 * (1 + params.caPermeability)
+    : 35 * (1 + 0.1 * params.caPermeability);
+  const rise = 1 - Math.exp(-t / tauR);
+  const decay = Math.exp(-t / tauD);
+  return baseAmp * rise * decay;
+}
+
+function renderGraph(now) {
+  const ratio = window.devicePixelRatio || 1;
+  const w = graphCanvas.width / ratio;
+  const h = graphCanvas.height / ratio;
+  graphCtx.clearRect(0, 0, w, h);
+
+  // vertical grid
+  graphCtx.strokeStyle = 'rgba(255,255,255,0.08)';
+  graphCtx.lineWidth = 1;
+  graphCtx.beginPath();
+  for (let i = 0; i <= 5; i += 1) {
+    const x = (w * i) / 5;
+    graphCtx.moveTo(x, 0);
+    graphCtx.lineTo(x, h);
+  }
+  graphCtx.stroke();
+
+  const windowMs = 10000;
+  const start = now - windowMs;
+  const maxAmp = 6; // display scaling
+
+  state.spikes.forEach((spike) => {
+    const color = palette[spike.synapseId % palette.length];
+    const t0 = spike.t;
+    const end = t0 + 1000; // render first 1s of waveform
+    if (end < start) return;
+    graphCtx.strokeStyle = color;
+    graphCtx.lineWidth = 2;
+    graphCtx.beginPath();
+    let started = false;
+    const samples = 48;
+    for (let i = 0; i <= samples; i += 1) {
+      const t = t0 + (i / samples) * 1000;
+      if (t < start || t > now) continue;
+      const rel = t - start;
+      const x = (rel / windowMs) * w;
+      const amp = spikeValue(spike, t - t0);
+      const y = h - Math.min(h * 0.9, (amp / maxAmp) * h * 0.8) - h * 0.05;
+      if (!started) {
+        graphCtx.moveTo(x, y);
+        started = true;
+      } else {
+        graphCtx.lineTo(x, y);
+      }
+    }
+    graphCtx.stroke();
+  });
+}
+
 function updateCardFromSynapse(syn) {
   const { badge, paramLabels } = syn.view;
   if (!syn.assigned) {
@@ -242,6 +360,7 @@ function renderLoop() {
     drawSynapse(view.canvas, syn, intensity);
     updateCardFromSynapse(syn);
   });
+  renderGraph(now);
   requestAnimationFrame(renderLoop);
 }
 
@@ -296,6 +415,7 @@ function wireEvents() {
       syn.view.flashUntil = performance.now() + 800;
       syn.view.flashPower = data.power || 1;
     }
+    recordSpike(data);
   });
 
   es.addEventListener('params', (evt) => {
@@ -309,13 +429,12 @@ function wireEvents() {
   es.addEventListener('reset', (evt) => {
     const data = JSON.parse(evt.data);
     state.sessionId = data.sessionId;
-    state.joinUrl = `${location.origin}/join/${state.sessionId}`;
+    state.joinUrl = buildJoinUrl(state.sessionId);
     ensureSynapses(state.synapseCount);
     applyStateSynapses(data.synapses || []);
     document.getElementById('session-id').textContent = state.sessionId;
     document.getElementById('join-link').textContent = state.joinUrl;
-    const img = document.getElementById('qr-img');
-    img.src = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(state.joinUrl)}`;
+    renderQrCode(state.joinUrl);
   });
 
   es.onerror = () => {
@@ -330,17 +449,18 @@ async function resetSession() {
 }
 
 async function init() {
+  resizeGraph();
+  window.addEventListener('resize', resizeGraph);
   const info = await fetch('/api/session').then((r) => r.json());
   state.sessionId = info.sessionId;
-  state.joinUrl = info.joinUrl;
+  state.joinUrl = buildJoinUrl(info.sessionId);
   state.synapseCount = info.synapseCount;
   ensureSynapses(info.synapseCount);
   applyStateSynapses(info.state.synapses || []);
 
-  document.getElementById('join-link').textContent = info.joinUrl;
+  document.getElementById('join-link').textContent = state.joinUrl;
   document.getElementById('session-id').textContent = info.sessionId;
-  document.getElementById('qr-img').src =
-    `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(info.joinUrl)}`;
+  renderQrCode(state.joinUrl);
 
   document.getElementById('reset-button').addEventListener('click', resetSession);
 
