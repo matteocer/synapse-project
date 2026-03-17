@@ -12,7 +12,7 @@
       <div class="title">
         <p class="eyebrow">Live Playground</p>
         <h1>Synapse Spike Wall</h1>
-        <p class="lede">Scan the QR to claim one receptor (AMPA or NMDA). Tune Ca++ permeability, probability of release, number of synapses, and quantal response, then fire spikes.</p>
+        <p class="lede">Scan the QR to claim one receptor (AMPA or NMDA). Tune probability of release, number of synapses, and quantal response from your phone, then fire spikes from the main screen.</p>
       </div>
       <div class="qr-card">
         <img id="qr-img" width="260" height="260" alt="QR code to join" />
@@ -33,6 +33,7 @@
       <header class="status-bar">
         <div id="connected-count"></div>
         <div id="synapse-count"></div>
+        <div>Click a claimed synapse to fire</div>
       </header>
       <div id="synapse-grid" class="synapse-grid" aria-label="Synapse grid"></div>
     </section>
@@ -41,7 +42,7 @@
       <div class="graph-header">
         <div>
           <p class="eyebrow">Recent Spikes (10s window)</p>
-          <p class="lede">Waveform shaped by receptor (AMPA fast / NMDA slow), Ca++ permeability, probability of release, n synapses, and quantal response.</p>
+          <p class="lede">Waveform shaped by receptor (AMPA fast / NMDA slow), probability of release, n synapses, and quantal response. Connected synapses keep a low idle signal between spikes.</p>
         </div>
       </div>
       <canvas id="spike-graph" aria-label="Spike waveforms"></canvas>

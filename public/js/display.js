@@ -1,5 +1,4 @@
 const defaultParams = () => ({
-  caPermeability: 0.5,
   pRelease: 0.5,
   nSynapses: 1,
   quantalResponse: 1,
@@ -60,7 +59,36 @@ function seededRandom(seed) {
   return x - Math.floor(x);
 }
 
-function drawSynapse(canvas, syn, intensity = 0) {
+function signalProfile(syn) {
+  const params = syn.params || defaultParams();
+  const receptor = syn.receptor || 'AMPA';
+
+  return {
+    amplitude: 0.06 + params.quantalResponse * 0.03 + params.pRelease * 0.05 + (params.nSynapses - 1) * 0.015,
+    primaryHz: receptor === 'NMDA' ? 0.28 : 0.65,
+    secondaryHz: receptor === 'NMDA' ? 0.11 : 0.24,
+    phase: syn.id * 0.85 + (receptor === 'NMDA' ? 1.1 : 0.2),
+  };
+}
+
+function idleSignalValue(syn, t) {
+  if (!syn || !syn.assigned) return 0;
+
+  const { amplitude, primaryHz, secondaryHz, phase } = signalProfile(syn);
+  const tSec = t / 1000;
+  const carrier = 0.55 + 0.45 * Math.sin(tSec * Math.PI * 2 * primaryHz + phase);
+  const shimmer = 0.5 + 0.5 * Math.sin(tSec * Math.PI * 2 * secondaryHz + phase * 1.7);
+  return amplitude * (0.45 + carrier * 0.4 + shimmer * 0.15);
+}
+
+function idleSignalIntensity(syn, t) {
+  if (!syn || !syn.assigned) return 0;
+
+  const { amplitude } = signalProfile(syn);
+  return Math.min(0.3, 0.05 + amplitude * 0.25 + idleSignalValue(syn, t) * 0.25);
+}
+
+function drawSynapse(canvas, syn, intensity = 0, flashIntensity = 0) {
   const ctx = canvas.getContext('2d');
   const w = canvas.width;
   const h = canvas.height;
@@ -146,21 +174,21 @@ function drawSynapse(canvas, syn, intensity = 0) {
     drawRoundedRect(ctx, -10, 0, 20, 30, 6);
     ctx.fill();
     // ion stream
-    if (intensity > 0 && open) {
-      ctx.strokeStyle = `rgba(92, 244, 217, ${0.4 * intensity})`;
+    if (intensity > 0.01 && open) {
+      ctx.strokeStyle = `rgba(92, 244, 217, ${0.18 + 0.35 * intensity})`;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(0, 32);
-      ctx.lineTo(0, 32 + intensity * 14);
+      ctx.lineTo(0, 38 + intensity * 14);
       ctx.stroke();
     }
     ctx.restore();
   });
 
   // flash ring
-  if (intensity > 0.01) {
-    ctx.strokeStyle = `rgba(247, 181, 56, ${0.35 * intensity})`;
-    ctx.lineWidth = 10 * intensity + 1;
+  if (flashIntensity > 0.01) {
+    ctx.strokeStyle = `rgba(247, 181, 56, ${0.35 * flashIntensity})`;
+    ctx.lineWidth = 10 * flashIntensity + 1;
     drawRoundedRect(ctx, 8, 6, 304, 208, 18);
     ctx.stroke();
   }
@@ -171,6 +199,18 @@ function drawSynapse(canvas, syn, intensity = 0) {
 function createSynapseCard(syn) {
   const card = document.createElement('div');
   card.className = 'synapse-card';
+  card.tabIndex = -1;
+  card.addEventListener('click', () => {
+    if (!syn.assigned) return;
+    fireDisplaySpike(syn.id);
+  });
+  card.addEventListener('keydown', (evt) => {
+    if (!syn.assigned) return;
+    if (evt.key === 'Enter' || evt.key === ' ') {
+      evt.preventDefault();
+      fireDisplaySpike(syn.id);
+    }
+  });
 
   const header = document.createElement('div');
   header.className = 'synapse-header';
@@ -188,17 +228,15 @@ function createSynapseCard(syn) {
 
   const params = document.createElement('div');
   params.className = 'params';
-  const lines = ['caPermeability', 'pRelease', 'nSynapses', 'quantalResponse'].map((key) => {
+  const lines = ['pRelease', 'nSynapses', 'quantalResponse'].map((key) => {
     const row = document.createElement('div');
     row.className = 'param-line';
     const left = document.createElement('span');
-    left.textContent = key === 'caPermeability'
-      ? 'Ca++ perm'
-      : key === 'pRelease'
-        ? 'P(release)'
-        : key === 'nSynapses'
-          ? '# synapses'
-          : 'Quantal resp';
+    left.textContent = key === 'pRelease'
+      ? 'P(release)'
+      : key === 'nSynapses'
+        ? '# synapses'
+        : 'Quantal resp';
     const right = document.createElement('span');
     right.dataset.key = key;
     row.append(left, right);
@@ -241,6 +279,32 @@ function updateCounts() {
   document.getElementById('synapse-count').textContent = `Synapses: ${state.synapseCount}`;
 }
 
+async function fireDisplaySpike(synapseId) {
+  const syn = state.synapses[synapseId];
+  if (!state.sessionId || !syn?.assigned) return;
+
+  try {
+    const res = await fetch('/api/spike', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Synapse-Source': 'display',
+      },
+      body: JSON.stringify({
+        sessionId: state.sessionId,
+        synapseId,
+      }),
+    });
+
+    if (!res.ok) {
+      const { error } = await res.json().catch(() => ({ error: 'Unable to fire synapse.' }));
+      console.error('display fire failed', error);
+    }
+  } catch (err) {
+    console.error('display fire failed', err);
+  }
+}
+
 function recordSpike(spike) {
   const now = performance.now();
   const syn = state.synapses[spike.synapseId];
@@ -262,9 +326,7 @@ function spikeValue(spike, t) {
   const { params, receptor, power } = spike;
   const baseAmp = power * params.quantalResponse * (0.5 + 0.5 * params.pRelease) * (1 + 0.2 * (params.nSynapses - 1));
   const tauR = receptor === 'NMDA' ? 15 : 3;
-  const tauD = receptor === 'NMDA'
-    ? 200 * (1 + params.caPermeability)
-    : 35 * (1 + 0.1 * params.caPermeability);
+  const tauD = receptor === 'NMDA' ? 200 : 35;
   const rise = 1 - Math.exp(-t / tauR);
   const decay = Math.exp(-t / tauD);
   return baseAmp * rise * decay;
@@ -290,9 +352,37 @@ function renderGraph(now) {
   const windowMs = 10000;
   const start = now - windowMs;
   const maxAmp = 6; // display scaling
+  state.spikes = state.spikes.filter((spike) => spike.t >= start - 1000);
+
+  state.synapses.forEach((syn) => {
+    if (!syn.assigned) return;
+
+    graphCtx.save();
+    graphCtx.strokeStyle = palette[syn.id % palette.length];
+    graphCtx.globalAlpha = 0.35;
+    graphCtx.lineWidth = 1.5;
+    graphCtx.beginPath();
+
+    const samples = 120;
+    for (let i = 0; i <= samples; i += 1) {
+      const t = start + (i / samples) * windowMs;
+      const x = (i / samples) * w;
+      const amp = idleSignalValue(syn, t);
+      const y = h - Math.min(h * 0.9, (amp / maxAmp) * h * 0.8) - h * 0.05;
+      if (i === 0) {
+        graphCtx.moveTo(x, y);
+      } else {
+        graphCtx.lineTo(x, y);
+      }
+    }
+
+    graphCtx.stroke();
+    graphCtx.restore();
+  });
 
   state.spikes.forEach((spike) => {
     const color = palette[spike.synapseId % palette.length];
+    const syn = state.synapses[spike.synapseId];
     const t0 = spike.t;
     const end = t0 + 1000; // render first 1s of waveform
     if (end < start) return;
@@ -306,7 +396,7 @@ function renderGraph(now) {
       if (t < start || t > now) continue;
       const rel = t - start;
       const x = (rel / windowMs) * w;
-      const amp = spikeValue(spike, t - t0);
+      const amp = idleSignalValue(syn, t) + spikeValue(spike, t - t0);
       const y = h - Math.min(h * 0.9, (amp / maxAmp) * h * 0.8) - h * 0.05;
       if (!started) {
         graphCtx.moveTo(x, y);
@@ -320,15 +410,22 @@ function renderGraph(now) {
 }
 
 function updateCardFromSynapse(syn) {
-  const { badge, paramLabels } = syn.view;
+  const { badge, paramLabels, root } = syn.view;
   if (!syn.assigned) {
     badge.className = 'badge unassigned';
     badge.textContent = 'open';
+    root.classList.remove('fireable');
+    root.tabIndex = -1;
+    root.setAttribute('role', 'group');
+    root.setAttribute('aria-label', `Synapse ${syn.id + 1} is open`);
   } else {
     badge.className = `badge ${syn.receptor === 'NMDA' ? 'nmda' : 'ampa'}`;
     badge.textContent = syn.receptor;
+    root.classList.add('fireable');
+    root.tabIndex = 0;
+    root.setAttribute('role', 'button');
+    root.setAttribute('aria-label', `Fire synapse ${syn.id + 1}`);
   }
-  paramLabels.caPermeability.textContent = syn.params.caPermeability.toFixed(2);
   paramLabels.pRelease.textContent = syn.params.pRelease.toFixed(2);
   paramLabels.nSynapses.textContent = syn.params.nSynapses.toString();
   paramLabels.quantalResponse.textContent = syn.params.quantalResponse.toFixed(2);
@@ -339,8 +436,9 @@ function renderLoop() {
   state.synapses.forEach((syn) => {
     const view = syn.view;
     const remaining = Math.max(0, view.flashUntil - now);
-    const intensity = remaining > 0 ? view.flashPower * (remaining / 800) : 0;
-    drawSynapse(view.canvas, syn, intensity);
+    const flashIntensity = remaining > 0 ? view.flashPower * (remaining / 800) : 0;
+    const intensity = Math.max(idleSignalIntensity(syn, now), flashIntensity);
+    drawSynapse(view.canvas, syn, intensity, flashIntensity);
     updateCardFromSynapse(syn);
   });
   renderGraph(now);
@@ -415,6 +513,7 @@ function wireEvents() {
     state.joinUrl = data.joinUrl || state.joinUrl;
     state.qrDataUrl = data.qrDataUrl || '';
     state.synapseCount = data.synapseCount || state.synapseCount;
+    state.spikes = [];
     ensureSynapses(state.synapseCount);
     applyStateSynapses(data.synapses || []);
     document.getElementById('session-id').textContent = state.sessionId;
@@ -441,6 +540,7 @@ async function init() {
   state.joinUrl = info.joinUrl;
   state.qrDataUrl = info.qrDataUrl || '';
   state.synapseCount = info.synapseCount;
+  state.spikes = [];
   ensureSynapses(info.synapseCount);
   applyStateSynapses(info.state.synapses || []);
 

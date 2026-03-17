@@ -3,14 +3,9 @@ const titleEl = document.getElementById('controller-title');
 const tagEl = document.getElementById('synapse-tag');
 const sessionLabel = document.getElementById('session-label');
 const receptorLabel = document.getElementById('receptor-label');
-const latencyLabel = document.getElementById('latency-label');
-const fireBtn = document.getElementById('fire-btn');
-const autoBtn = document.getElementById('auto-btn');
-const caSlider = document.getElementById('ca-slider');
 const prelSlider = document.getElementById('prel-slider');
 const nsynSlider = document.getElementById('nsyn-slider');
 const quantalSlider = document.getElementById('quantal-slider');
-const caLabel = document.getElementById('ca-label');
 const prelLabel = document.getElementById('prel-label');
 const nsynLabel = document.getElementById('nsyn-label');
 const quantalLabel = document.getElementById('quantal-label');
@@ -18,21 +13,16 @@ const quantalLabel = document.getElementById('quantal-label');
 let sessionId = null;
 let clientId = null;
 let synapseId = null;
-let lastPing = null;
 let receptor = null;
 let sendTimer = null;
-let autoOn = false;
-let autoTimer = null;
 
 const params = {
-  caPermeability: 0.5,
   pRelease: 0.5,
   nSynapses: 1,
   quantalResponse: 1,
 };
 
 function renderParamLabels() {
-  caLabel.textContent = params.caPermeability.toFixed(2);
   prelLabel.textContent = params.pRelease.toFixed(2);
   nsynLabel.textContent = params.nSynapses.toString();
   quantalLabel.textContent = params.quantalResponse.toFixed(2);
@@ -93,36 +83,14 @@ async function joinSession() {
   receptorLabel.textContent = `Receptor: ${receptor}`;
   sessionLabel.textContent = `Session ${sessionId}`;
   renderParamLabels();
-  caSlider.value = params.caPermeability;
   prelSlider.value = params.pRelease;
   nsynSlider.value = params.nSynapses;
   quantalSlider.value = params.quantalResponse;
-  statusEl.textContent = 'Connected. Tap to fire spikes.';
-  fireBtn.disabled = false;
-  autoBtn.disabled = false;
-}
-
-async function fireSpike() {
-  if (!clientId) return;
-  const started = performance.now();
-  const res = await fetch('/api/spike', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ clientId, synapseId, sessionId }),
-  });
-  if (res.ok) {
-    lastPing = performance.now() - started;
-    latencyLabel.textContent = `${Math.round(lastPing)} ms`;
-  } else if (res.status === 410) {
-    statusEl.textContent = 'Session expired. Please re-scan the QR code.';
-    fireBtn.disabled = true;
-    stopAuto();
-  }
+  statusEl.textContent = 'Connected. Adjust parameters here; the main display will fire this synapse.';
 }
 
 async function leave() {
   if (!clientId) return;
-  stopAuto();
   try {
     await fetch('/api/leave', {
       method: 'POST',
@@ -135,46 +103,8 @@ async function leave() {
   }
 }
 
-fireBtn.addEventListener('click', fireSpike);
 window.addEventListener('beforeunload', leave);
 
-function stopAuto() {
-  autoOn = false;
-  if (autoTimer) {
-    clearTimeout(autoTimer);
-    autoTimer = null;
-  }
-  autoBtn.textContent = 'Auto spike: off';
-}
-
-async function autoLoop() {
-  if (!autoOn) return;
-  try {
-    await fireSpike();
-  } catch (err) {
-    console.error('auto spike failed', err);
-    stopAuto();
-    return;
-  }
-  autoTimer = setTimeout(autoLoop, 2000);
-}
-
-autoBtn.addEventListener('click', () => {
-  if (!clientId) return;
-  if (autoOn) {
-    stopAuto();
-  } else {
-    autoOn = true;
-    autoBtn.textContent = 'Auto spike: on (2s)';
-    autoLoop();
-  }
-});
-
-caSlider.addEventListener('input', () => {
-  params.caPermeability = Number(caSlider.value);
-  renderParamLabels();
-  scheduleUpdate();
-});
 prelSlider.addEventListener('input', () => {
   params.pRelease = Number(prelSlider.value);
   renderParamLabels();

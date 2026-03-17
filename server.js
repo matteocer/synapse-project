@@ -2,11 +2,17 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const { randomUUID, randomBytes } = require('crypto');
+const QRCode = require('qrcode');
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
-const SYNAPSE_COUNT = Number(process.env.SYNAPSES || 10);
+const SYNAPSE_COUNT = Number(process.env.SYNAPSES || 16);
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const QR_OPTIONS = {
+  errorCorrectionLevel: 'M',
+  margin: 4,
+  width: 260,
+};
 
 let sessionId = randomBytes(4).toString('hex');
 
@@ -17,7 +23,6 @@ const controllers = new Map();
 const displays = new Set(); // Server-Sent Event response objects
 
 const defaultParams = () => ({
-  caPermeability: 0.5,
   pRelease: 0.5,
   nSynapses: 1,
   quantalResponse: 1,
@@ -81,7 +86,7 @@ function buildJoinUrl(req) {
     ? forwardedProto.split(',')[0].trim()
     : (req.socket?.encrypted ? 'https' : 'http');
   const host = req.headers.host || `localhost:${PORT}`;
-  return `${proto}://${host}/join/${sessionId}`;
+  return `${proto}://${host}/j/${sessionId}`;
 }
 
 function currentState() {
@@ -97,6 +102,18 @@ function currentState() {
         params: assigned?.params || defaultParams(),
       };
     }),
+  };
+}
+
+async function buildSessionPayload(req) {
+  const joinUrl = buildJoinUrl(req);
+  const qrDataUrl = await QRCode.toDataURL(joinUrl, QR_OPTIONS);
+  return {
+    sessionId,
+    joinUrl,
+    qrDataUrl,
+    synapseCount: SYNAPSE_COUNT,
+    state: currentState(),
   };
 }
 
@@ -137,13 +154,24 @@ function allocateSynapse() {
   return null;
 }
 
-function handleSession(req, res) {
-  sendJson(res, 200, {
-    sessionId,
-    joinUrl: buildJoinUrl(req),
-    synapseCount: SYNAPSE_COUNT,
-    state: currentState(),
-  });
+function isDisplayRequest(req) {
+  if (req.headers['x-synapse-source'] !== 'display') return false;
+
+  const referer = req.headers.referer;
+  if (typeof referer !== 'string') return false;
+
+  try {
+    const refererUrl = new URL(referer);
+    const host = req.headers.host || refererUrl.host;
+    return refererUrl.host === host
+      && (refererUrl.pathname === '/' || refererUrl.pathname === '/index.html');
+  } catch (_) {
+    return false;
+  }
+}
+
+async function handleSession(req, res) {
+  sendJson(res, 200, await buildSessionPayload(req));
 }
 
 async function handleJoin(req, res) {
@@ -188,18 +216,26 @@ async function handleSpike(req, res) {
     sendJson(res, 400, { error: 'Invalid JSON' });
     return;
   }
-  const { clientId, synapseId, sessionId: postedSession, power = 1 } = body;
+  const { synapseId, sessionId: postedSession, power = 1 } = body;
   if (postedSession !== sessionId) {
     sendJson(res, 410, { error: 'Session expired, re-scan the QR code.' });
     return;
   }
-  const controller = controllers.get(clientId);
-  if (!controller || controller.synapseId !== Number(synapseId)) {
-    sendJson(res, 403, { error: 'Unknown controller or synapse mismatch.' });
+  if (!isDisplayRequest(req)) {
+    sendJson(res, 403, { error: 'Spikes can only be triggered from the main display.' });
+    return;
+  }
+  const targetSynapseId = Number(synapseId);
+  if (!Number.isInteger(targetSynapseId) || targetSynapseId < 0 || targetSynapseId >= SYNAPSE_COUNT) {
+    sendJson(res, 400, { error: 'Invalid synapse.' });
+    return;
+  }
+  if (!assignments.has(targetSynapseId)) {
+    sendJson(res, 404, { error: 'Synapse not assigned.' });
     return;
   }
   const spike = {
-    synapseId: Number(synapseId),
+    synapseId: targetSynapseId,
     power: Math.max(0.2, Math.min(2, Number(power) || 1)),
     at: Date.now(),
   };
@@ -260,7 +296,6 @@ async function handleUpdate(req, res) {
   }
   record.params = {
     ...record.params,
-    caPermeability: clamp(params.caPermeability, 0, 2, record.params.caPermeability),
     pRelease: clamp(params.pRelease, 0, 1, record.params.pRelease),
     nSynapses: Math.round(clamp(params.nSynapses, 1, 10, record.params.nSynapses)),
     quantalResponse: clamp(params.quantalResponse, 0.1, 5, record.params.quantalResponse),
@@ -297,7 +332,7 @@ async function route(req, res) {
   const { pathname } = parsed;
 
   if (req.method === 'GET' && pathname === '/api/session') {
-    handleSession(req, res);
+    await handleSession(req, res);
     return;
   }
   if (req.method === 'GET' && pathname === '/api/events') {
@@ -322,14 +357,15 @@ async function route(req, res) {
   }
   if (req.method === 'POST' && pathname === '/api/reset') {
     resetSession();
-    sendJson(res, 200, { sessionId });
-    broadcast('reset', currentState());
+    const payload = await buildSessionPayload(req);
+    sendJson(res, 200, payload);
+    broadcast('reset', payload);
     return;
   }
 
   if (req.method === 'GET') {
-    // Controller deep links: /join/<sessionId>
-    if (pathname.startsWith('/join/')) {
+    // Controller deep links: /join/<sessionId> and /j/<sessionId>
+    if (pathname.startsWith('/join/') || pathname.startsWith('/j/')) {
       serveFile(res, path.join(PUBLIC_DIR, 'controller.html'), 'text/html; charset=utf-8');
       return;
     }

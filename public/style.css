@@ -147,6 +147,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 8px 12px;
   background: rgba(0, 0, 0, 0.15);
@@ -191,6 +192,27 @@ button:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18);
   display: grid;
   gap: 8px;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.synapse-card.fireable {
+  cursor: pointer;
+  border-color: rgba(92, 244, 217, 0.3);
+}
+
+.synapse-card.fireable:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.24);
+}
+
+.synapse-card.fireable:active {
+  transform: translateY(0);
+}
+
+.synapse-card.fireable:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(92, 244, 217, 0.2), 0 18px 38px rgba(0, 0, 0, 0.24);
 }
 
 .synapse-header {
@@ -265,13 +287,6 @@ button:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
   color: var(--accent);
   font-weight: 700;
   letter-spacing: 0.04em;
-}
-
-#fire-btn {
-  width: 100%;
-  max-width: 360px;
-  height: 60px;
-  font-size: 18px;
 }
 
 .mini-stats {
